@@ -60,7 +60,7 @@ module.exports = class delta extends Exchange {
       },
       api: {
         public: {
-          get: ["products", "orderbook/{id}/l2"]
+          get: ["products", "orderbook/{id}/l2", 'products/ticker/24hr']
         },
         private: {
           get: ["positions"]
@@ -120,14 +120,29 @@ module.exports = class delta extends Exchange {
 
   async fetchL2OrderBook (symbol, limit = undefined, params = {}) {
     await this.loadMarkets ();
-    const market = this.market(symbol);
-    const id = market['id'];
+    const id = this.marketId (symbol);
     const orderbook  = await this.publicGetOrderbookIdL2(this.extend({ 'id': id }, params));
     return orderbook;
   }
 
+  async fetchTicker (symbol, params = {}) {
+    await this.loadMarkets ();
+    let ticker = await this.publicGetProductsTicker24hr(this.extend ({
+      'symbol': this.marketId (symbol),
+    }, params));
+    return ticker;
+  }
+  
   sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-    const url = this.urls['test'] +'/'+ this.implodeParams(path, params);
+    let url = this.urls['test'] +'/'+ this.implodeParams(path, params);
+    let query = this.omit (params, this.extractParams (path));
+
+    if (api === 'public') {
+      if (Object.keys (query).length){
+        url += '?' + this.urlencode (query);
+      }
+    }
+
     return { 'url': url, 'method': method, 'body': body, 'headers': headers };
   }
 };
