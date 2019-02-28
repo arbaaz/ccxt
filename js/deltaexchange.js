@@ -60,7 +60,7 @@ module.exports = class delta extends Exchange {
       },
       api: {
         public: {
-          get: ["products", "orderbook/{product_id}/l2"]
+          get: ["products", "orderbook/{id}/l2"]
         },
         private: {
           get: ["positions"]
@@ -126,7 +126,7 @@ module.exports = class delta extends Exchange {
     let orderbook = [];
 
     try {
-       orderbook = await this.publicGetOrderbookProductIdL2(this.extend({ 'product_id': 9}, params));
+       orderbook = await this.publicGetOrderbookIdL2(this.extend({ 'id': 9}, params));
     } catch(e){
       console.log(e);
     }
