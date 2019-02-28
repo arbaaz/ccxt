@@ -111,6 +111,7 @@ const exchanges = {
     'crex24':                  require ('./js/crex24.js'),
     'crypton':                 require ('./js/crypton.js'),
     'cryptopia':               require ('./js/cryptopia.js'),
+    'delta':                   require ('./js/deltaexchange.js'),
     'deribit':                 require ('./js/deribit.js'),
     'dsx':                     require ('./js/dsx.js'),
     'ethfinex':                require ('./js/ethfinex.js'),
