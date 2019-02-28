@@ -126,7 +126,7 @@ module.exports = class delta extends Exchange {
     let orderbook = [];
 
     try {
-       orderbook = await this.publicGetOrderbookIdL2(this.extend({ 'id': 9}, params));
+       orderbook = await this.publicGetOrderbookIdL2({ 'id': 9});
     } catch(e){
       console.log(e);
     }
@@ -135,7 +135,8 @@ module.exports = class delta extends Exchange {
   }
 
   sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-    const url = this.urls['api'] +'/'+ path;
+    const url = this.urls['test'] +'/'+ path;
+    console.log(url);
     return { 'url': url, 'method': method, 'body': body, 'headers': headers };
   }
 };
