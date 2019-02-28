@@ -120,23 +120,14 @@ module.exports = class delta extends Exchange {
 
   async fetchL2OrderBook (symbol, limit = undefined, params = {}) {
     await this.loadMarkets ();
-    let market = this.market(symbol);
-    let id = market['id'];
-    console.log('Id', id);
-    let orderbook = [];
-
-    try {
-       orderbook = await this.publicGetOrderbookIdL2({ 'id': 9});
-    } catch(e){
-      console.log(e);
-    }
-    
+    const market = this.market(symbol);
+    const id = market['id'];
+    const orderbook  = await this.publicGetOrderbookIdL2(this.extend({ 'id': id }, params));
     return orderbook;
   }
 
   sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-    const url = this.urls['test'] +'/'+ path;
-    console.log(url);
+    const url = this.urls['test'] +'/'+ this.implodeParams(path, params);
     return { 'url': url, 'method': method, 'body': body, 'headers': headers };
   }
 };
