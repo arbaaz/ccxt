@@ -20,10 +20,10 @@ module.exports = class delta extends Exchange {
         CORS: true,
         publicAPI: true,
         privateAPI: true,
-        fetchOrder: true,
-        fetchOrders: false,
         fetchOpenOrders: true,
-        fetchTickers: false
+        fetchTickers: true,
+        fetchOrder: false,
+        fetchOrders: false,
       },
       timeframes: {
         "1": "1m",
@@ -63,7 +63,9 @@ module.exports = class delta extends Exchange {
           get: ["products", "orderbook/{id}/l2", 'products/ticker/24hr']
         },
         private: {
-          get: ["positions", 'orders']
+          get: ["positions", 'orders', 'wallet/balances'],
+          post:['orders'],
+          delete:['orders']
         }
       },
       exceptions: {
@@ -136,12 +138,10 @@ module.exports = class delta extends Exchange {
     return ticker;
   }
 
-
-  async fetchOpenOrders (symbol = undefined, params = {}) {
+  async getOrders(symbol, params = {}){
     await this.loadMarkets ();
 
-    let request = { state:"open" };
-
+    let request = {};
     if(symbol){
       const id = this.marketId (symbol);
       request.product_id = id;
@@ -150,28 +150,98 @@ module.exports = class delta extends Exchange {
     const response = await this.privateGetOrders(this.extend(request, params));
     return response;
   }
+
+
+  async fetchOpenOrders (symbol = undefined, params = {}) {  
+    const response = await this.getOrders(symbol, this.extend({
+      state: 'open'
+    }, params));
+    return response;
+  }
+
+  async fetchClosedOrders(symbol, params) {
+    const response = await this.getOrders(symbol, this.extend({
+      state: 'closed'
+    }, params));
+    return response;
+  }
+
+  async fetchBalance(){
+    const response = await this.privateGetWalletBalances();
+    return response;
+  }
   
+  parseOrder(order){
+    //todo: implement parse order
+    return order;
+  }
+
+  async createOrder (symbol, side, amount, price = undefined, params = {}) {
+    await this.loadMarkets ();
+
+    let request = {
+      'product_id': this.marketId (symbol),
+      'side': side,
+      'size': amount,
+      'order_type': 'market_order',
+    };
+
+    if (price !== undefined){
+      request['limit_price'] = price;
+      request['order_type'] = 'limit_order'
+    }
+        
+    const response = await this.privatePostOrders (this.extend (request, params));
+    const order = this.parseOrder (response);
+    const id = order['id'];
+    this.orders[id] = order;
+    return order;
+  }
+
+  async cancelOrder (id, symbol = undefined, params = {}) {
+    await this.loadMarkets ();
+    const response = await this.privateDeleteOrders(this.extend({
+      id:id,
+      'product_id': this.marketId (symbol),
+    }, params));
+
+    return response;
+  }
+
+
+
   sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
     let url = this.urls['test'] +'/'+ this.implodeParams(path, params);
     let query = this.omit (params, this.extractParams (path));
 
-    if (Object.keys (query).length){
-      url += '?' + this.urlencode (query);
+    if (method === 'GET') {
+      if (Object.keys (query).length)
+          url += '?' + this.urlencode (query);
     }
 
     if (api === 'private') {
       this.checkRequiredCredentials ();
+
+      if (method !== 'GET') {
+        if (Object.keys (query).length) {
+          body = this.json (query);
+        }
+      }
+
       let timestamp = this.seconds();
       let signatureData = method + timestamp 
 
+      
       if(path[0] === "/"){
         signatureData += path
       } else {
         signatureData += '/'+ path
       }
 
-      if (Object.keys (query).length){
-        signatureData += '?' + this.urlencode (query);
+      if (method === 'GET') {
+        if (Object.keys (query).length){
+          signatureData += '?' + this.urlencode (query);
+        }
       }
 
       if (body !== undefined) {

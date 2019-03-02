@@ -9,7 +9,18 @@ const delta = new ccxt.delta({'verbose': 'True',
 const symbol = 'BTCUSDQ_29Mar';
 
 (async function(){
-  // let book = await delta.fetchOpenOrders(symbol);
+  let book = await delta.fetchOpenOrders(symbol);
+  console.log(book.map(async x => await delta.cancelOrder(x.id, x.product.symbol)));
+
+  // let book = await delta.fetchClosedOrders(symbol);
   // console.log(book);
+
+  // let order = await delta.createOrder(symbol, 'buy', 1 , '3754.73');
+  // console.log(order);
+
   
+
+  // const balance = await delta.fetchBalance();
+  // console.log('Balance', balance);
+
 })();
