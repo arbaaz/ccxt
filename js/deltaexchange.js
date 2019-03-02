@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require("./base/Exchange");
-const { PermissionDenied } = require("./base/errors");
+const { PermissionDenied, ArgumentsRequired } = require("./base/errors");
 
 //  ---------------------------------------------------------------------------
 
@@ -63,7 +63,7 @@ module.exports = class delta extends Exchange {
           get: ["products", "orderbook/{id}/l2", 'products/ticker/24hr']
         },
         private: {
-          get: ["positions"]
+          get: ["positions", 'orders']
         }
       },
       exceptions: {
@@ -118,7 +118,10 @@ module.exports = class delta extends Exchange {
     return result;
   }
 
-  async fetchL2OrderBook (symbol, limit = undefined, params = {}) {
+  async fetchL2OrderBook (symbol, params = {}) {
+    if(symbol === undefined){
+      throw new ArgumentsRequired('Argument required: symbol');
+    }
     await this.loadMarkets ();
     const id = this.marketId (symbol);
     const orderbook  = await this.publicGetOrderbookIdL2(this.extend({ 'id': id }, params));
@@ -132,15 +135,58 @@ module.exports = class delta extends Exchange {
     }, params));
     return ticker;
   }
+
+
+  async fetchOpenOrders (symbol = undefined, params = {}) {
+    await this.loadMarkets ();
+
+    let request = { state:"open" };
+
+    if(symbol){
+      const id = this.marketId (symbol);
+      request.product_id = id;
+    }
+    
+    const response = await this.privateGetOrders(this.extend(request, params));
+    return response;
+  }
   
   sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
     let url = this.urls['test'] +'/'+ this.implodeParams(path, params);
     let query = this.omit (params, this.extractParams (path));
 
-    if (api === 'public') {
-      if (Object.keys (query).length){
-        url += '?' + this.urlencode (query);
+    if (Object.keys (query).length){
+      url += '?' + this.urlencode (query);
+    }
+
+    if (api === 'private') {
+      this.checkRequiredCredentials ();
+      let timestamp = this.seconds();
+      let signatureData = method + timestamp 
+
+      if(path[0] === "/"){
+        signatureData += path
+      } else {
+        signatureData += '/'+ path
       }
+
+      if (Object.keys (query).length){
+        signatureData += '?' + this.urlencode (query);
+      }
+
+      if (body !== undefined) {
+        signatureData += body
+      }
+
+      let signature = this.hmac (this.encode (signatureData), this.encode (this.secret))
+      
+      headers = {
+        'Content-Type': 'application/json',
+        'api-key': this.apiKey,
+        'timestamp':timestamp,
+        'signature':signature
+      };
+      
     }
 
     return { 'url': url, 'method': method, 'body': body, 'headers': headers };
