@@ -24,6 +24,8 @@ module.exports = class delta extends Exchange {
         fetchTickers: true,
         fetchOrder: false,
         fetchOrders: false,
+        deposit:false,
+        withdraw:false,
       },
       timeframes: {
         "1": "1m",
