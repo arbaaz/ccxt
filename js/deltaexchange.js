@@ -3,7 +3,17 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require("./base/Exchange");
-const { PermissionDenied, ArgumentsRequired } = require("./base/errors");
+const {
+  ExchangeNotAvailable,
+  AuthenticationError,
+  InvalidOrder,
+  PermissionDenied,
+  InsufficientFunds,
+  ArgumentsRequired,
+  DDoSProtection,
+  BadRequest,
+  ExchangeError
+} = require("./base/errors");
 
 //  ---------------------------------------------------------------------------
 
@@ -24,8 +34,8 @@ module.exports = class delta extends Exchange {
         fetchTickers: true,
         fetchOrder: false,
         fetchOrders: false,
-        deposit:false,
-        withdraw:false,
+        deposit: false,
+        withdraw: false
       },
       timeframes: {
         "1": "1m",
@@ -52,215 +62,313 @@ module.exports = class delta extends Exchange {
         fees: "https://www.delta.exchange/fees/",
         referral: "https://www.delta.exchange/referral-program/"
       },
-      'fees': {
-        'trading': {
-            'tierBased': false,
-            'percentage': true,
-            'taker': 0.001,
-            'maker': 0.001,
-        },
+      fees: {
+        trading: {
+          tierBased: false,
+          percentage: true,
+          taker: 0.001,
+          maker: 0.001
+        }
       },
       api: {
         public: {
-          get: ["products", "orderbook/{id}/l2", 'products/ticker/24hr']
+          get: ["products", "orderbook/{id}/l2", "products/ticker/24hr"]
         },
         private: {
-          get: ["positions", 'orders', 'wallet/balances'],
-          post:['orders'],
-          delete:['orders']
+          get: ["positions", "orders", "wallet/balances", "orders/leverage"],
+          post: ["orders", "orders/leverage"],
+          delete: ["orders"]
         }
       },
       exceptions: {
-        "9999": PermissionDenied
+        exact: {
+          "ServerError": ExchangeNotAvailable,
+        },
       }
     });
   }
 
-  async fetchMarkets(){
+  async fetchMarkets() {
     const response = await this.publicGetProducts();
     const result = [];
     for (let i = 0; i < response.length; i++) {
       const market = response[i];
-      const id = market['id']
-      const symbol = market['symbol'];
-      const tickSize = this.safeFloat (market, 'tick_size');
-      const active = market['trading_status'] === 'operational';
+      const id = market["id"];
+      const symbol = market["symbol"];
+      const tickSize = this.safeFloat(market, "tick_size");
+      const active = market["trading_status"] === "operational";
       const limits = {
-        'amount': {
-            'min': undefined,
-            'max': undefined,
+        amount: {
+          min: undefined,
+          max: undefined
         },
-        'price': {
-            'min': tickSize,
-            'max': undefined,
+        price: {
+          min: tickSize,
+          max: undefined
         },
-        'cost': {
-            'min': undefined,
-            'max': undefined,
-        },
+        cost: {
+          min: undefined,
+          max: undefined
+        }
       };
 
       const precision = {
-        'amount': undefined,
-        'price': undefined,
+        amount: undefined,
+        price: undefined
       };
 
       result.push({
-        'active':active,
-        'base':market.underlying_asset.symbol,
-        'future': true,
-        'id':id,
-        'info': market,
-        'limits':limits,
-        'precision':precision,
-        'quote': market.quoting_asset.symbol,
-        'spot': false,
-        'symbol': symbol,
-        'type': 'future',
-      })
+        active: active,
+        base: market.underlying_asset.symbol,
+        future: true,
+        id: id,
+        info: market,
+        limits: limits,
+        precision: precision,
+        quote: market.quoting_asset.symbol,
+        spot: false,
+        symbol: symbol,
+        type: "future"
+      });
     }
     return result;
   }
 
-  async fetchL2OrderBook (symbol, params = {}) {
-    if(symbol === undefined){
-      throw new ArgumentsRequired('Argument required: symbol');
+  async fetchL2OrderBook(symbol, params = {}) {
+    if (symbol === undefined) {
+      throw new ArgumentsRequired("Argument required: symbol");
     }
-    await this.loadMarkets ();
-    const id = this.marketId (symbol);
-    const orderbook  = await this.publicGetOrderbookIdL2(this.extend({ 'id': id }, params));
+    await this.loadMarkets();
+    const id = this.marketId(symbol);
+    const orderbook = await this.publicGetOrderbookIdL2(
+      this.extend({ id: id }, params)
+    );
     return orderbook;
   }
 
-  async fetchTicker (symbol, params = {}) {
-    await this.loadMarkets ();
-    let ticker = await this.publicGetProductsTicker24hr(this.extend ({
-      'symbol': this.marketId (symbol),
-    }, params));
+  async fetchTicker(symbol, params = {}) {
+    await this.loadMarkets();
+    let ticker = await this.publicGetProductsTicker24hr(
+      this.extend(
+        {
+          symbol: this.marketId(symbol)
+        },
+        params
+      )
+    );
     return ticker;
   }
 
-  async getOrders(symbol, params = {}){
-    await this.loadMarkets ();
+  async getOrders(symbol, params = {}) {
+    await this.loadMarkets();
 
     let request = {};
-    if(symbol){
-      const id = this.marketId (symbol);
+    if (symbol) {
+      const id = this.marketId(symbol);
       request.product_id = id;
     }
-    
+
     const response = await this.privateGetOrders(this.extend(request, params));
     return response;
   }
 
-
-  async fetchOpenOrders (symbol = undefined, params = {}) {  
-    const response = await this.getOrders(symbol, this.extend({
-      state: 'open'
-    }, params));
+  async fetchOpenOrders(symbol = undefined, params = {}) {
+    const response = await this.getOrders(
+      symbol,
+      this.extend(
+        {
+          state: "open"
+        },
+        params
+      )
+    );
     return response;
   }
 
   async fetchClosedOrders(symbol, params) {
-    const response = await this.getOrders(symbol, this.extend({
-      state: 'closed'
-    }, params));
+    const response = await this.getOrders(
+      symbol,
+      this.extend(
+        {
+          state: "closed"
+        },
+        params
+      )
+    );
     return response;
   }
 
-  async fetchBalance(){
+  async fetchBalance() {
     const response = await this.privateGetWalletBalances();
     return response;
   }
-  
-  parseOrder(order){
+
+  parseOrder(order) {
     //todo: implement parse order
     return order;
   }
 
-  async createOrder (symbol, side, amount, price = undefined, params = {}) {
-    await this.loadMarkets ();
+  async createOrder(symbol, side, amount, price = undefined, params = {}) {
+    await this.loadMarkets();
 
     let request = {
-      'product_id': this.marketId (symbol),
-      'side': side,
-      'size': amount,
-      'order_type': 'market_order',
+      product_id: this.marketId(symbol),
+      side: side,
+      size: amount,
+      order_type: "market_order"
     };
 
-    if (price !== undefined){
-      request['limit_price'] = price;
-      request['order_type'] = 'limit_order'
+    if (price !== undefined) {
+      request["limit_price"] = price;
+      request["order_type"] = "limit_order";
     }
-        
-    const response = await this.privatePostOrders (this.extend (request, params));
-    const order = this.parseOrder (response);
-    const id = order['id'];
+
+    const response = await this.privatePostOrders(this.extend(request, params));
+    const order = this.parseOrder(response);
+    const id = order["id"];
     this.orders[id] = order;
     return order;
   }
 
-  async cancelOrder (id, symbol = undefined, params = {}) {
-    await this.loadMarkets ();
-    const response = await this.privateDeleteOrders(this.extend({
-      id:id,
-      'product_id': this.marketId (symbol),
-    }, params));
+  async cancelOrder(id, symbol = undefined, params = {}) {
+    await this.loadMarkets();
+    const response = await this.privateDeleteOrders(
+      this.extend(
+        {
+          id: id,
+          product_id: this.marketId(symbol)
+        },
+        params
+      )
+    );
 
     return response;
   }
 
+  async fetchPositions() {
+    const response = await this.privateGetPositions();
+    return response;
+  }
 
+  async editOrder(id, symbol = undefined, params = {}) {}
 
-  sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-    let url = this.urls['test'] +'/'+ this.implodeParams(path, params);
-    let query = this.omit (params, this.extractParams (path));
+  async fetchOHLCV(
+    symbol,
+    timeframe = "1m",
+    since = undefined,
+    limit = undefined,
+    params = {}
+  ) {}
 
-    if (method === 'GET') {
-      if (Object.keys (query).length)
-          url += '?' + this.urlencode (query);
+  async fetchOrderLeverage(symbol) {
+    await this.loadMarkets();
+    const response = await this.privateGetOrdersLeverage({
+      product_id: this.marketId(symbol)
+    });
+
+    return response;
+  }
+
+  async changePositionMargin(symbol, deltaMargin) {
+    await this.loadMarkets();
+    const response = await this.privatePostOrdersLeverage({
+      product_id: this.marketId(symbol),
+      delta_margin: deltaMargin
+    });
+
+    return response;
+  }
+
+  async changeOrderLeverage(symbol, leverage) {
+    await this.loadMarkets();
+    const response = await this.privatePostOrdersLeverage({
+      product_id: this.marketId(symbol),
+      leverage: leverage
+    });
+
+    return response;
+  }
+
+  handleErrors(code, reason, url, method, headers, body, response) {
+    if (code === 429) {
+      throw new DDoSProtection(this.id + " " + body);
     }
 
-    if (api === 'private') {
-      this.checkRequiredCredentials ();
+    if (body) {
+      if (body[0] === "{") {
+        const error = this.safeValue(response, "error", {});
+        const message = this.safeString(response, "message");
+        const feedback = this.id + " " + body;
+        const exact = this.exceptions["exact"];
+        if (error in exact) {
+          throw new exact[error](feedback);
+        }
 
-      if (method !== 'GET') {
-        if (Object.keys (query).length) {
-          body = this.json (query);
+        if (code === 400) {
+          throw new BadRequest(feedback);
+        }
+
+        throw new ExchangeError(feedback);
+      }
+    }
+  }
+
+  sign(
+    path,
+    api = "public",
+    method = "GET",
+    params = {},
+    headers = undefined,
+    body = undefined
+  ) {
+    let url = this.urls["test"] + "/" + this.implodeParams(path, params);
+    let query = this.omit(params, this.extractParams(path));
+
+    if (method === "GET") {
+      if (Object.keys(query).length) url += "?" + this.urlencode(query);
+    }
+
+    if (api === "private") {
+      this.checkRequiredCredentials();
+
+      if (method !== "GET") {
+        if (Object.keys(query).length) {
+          body = this.json(query);
         }
       }
 
       let timestamp = this.seconds();
-      let signatureData = method + timestamp 
+      let signatureData = method + timestamp;
 
-      
-      if(path[0] === "/"){
-        signatureData += path
+      if (path[0] === "/") {
+        signatureData += path;
       } else {
-        signatureData += '/'+ path
+        signatureData += "/" + path;
       }
 
-      if (method === 'GET') {
-        if (Object.keys (query).length){
-          signatureData += '?' + this.urlencode (query);
+      if (method === "GET") {
+        if (Object.keys(query).length) {
+          signatureData += "?" + this.urlencode(query);
         }
       }
 
       if (body !== undefined) {
-        signatureData += body
+        signatureData += body;
       }
 
-      let signature = this.hmac (this.encode (signatureData), this.encode (this.secret))
-      
+      let signature = this.hmac(
+        this.encode(signatureData),
+        this.encode(this.secret)
+      );
+
       headers = {
-        'Content-Type': 'application/json',
-        'api-key': this.apiKey,
-        'timestamp':timestamp,
-        'signature':signature
+        "Content-Type": "application/json",
+        "api-key": this.apiKey,
+        timestamp: timestamp,
+        signature: signature
       };
-      
     }
 
-    return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    return { url: url, method: method, body: body, headers: headers };
   }
 };
